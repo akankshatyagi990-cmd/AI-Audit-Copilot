@@ -1,0 +1,11 @@
+claim_id,provider,procedure_code,billed_amount,allowed_amount,units,status
+CLM001,Provider A,99213,150,120,1,Approved
+CLM002,Provider B,99214,350,180,1,Approved
+CLM003,Provider A,99213,145,120,1,Approved
+CLM004,Provider C,99215,1200,250,1,Review
+CLM005,Provider B,99214,340,180,1,Approved
+CLM006,Provider D,99213,155,120,4,Review
+CLM007,Provider A,99213,148,120,1,Approved
+CLM008,Provider C,99215,260,250,1,Approved
+CLM009,Provider B,99214,900,180,1,Review
+CLM010,Provider D,99213,152,120,1,Approved
