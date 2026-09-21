@@ -19,6 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from utils.ai_assistant import (
     ask_audit_copilot,
     generate_audit_summary,
+    generate_policy_grounded_audit_summary,
 )
 
 
@@ -32,6 +33,26 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+# ============================================================
+# KNOWLEDGE BASE STATUS
+# ============================================================
+
+POLICY_DIRECTORY = (
+    PROJECT_ROOT
+    / "knowledge_base"
+    / "policies"
+)
+
+policy_files = []
+
+if POLICY_DIRECTORY.exists():
+    policy_files = sorted(
+        POLICY_DIRECTORY.glob("*.pdf")
+    )
+
+policy_count = len(policy_files)
 
 
 # ============================================================
@@ -99,6 +120,7 @@ def calculate_final_risk(row):
         risk_level = "Low"
 
     if not reasons:
+
         reasons.append(
             "No significant rule-based or statistical risk detected"
         )
@@ -166,7 +188,9 @@ def generate_recommendation(row):
             "and supporting documentation."
         )
 
-    return "; ".join(recommendations)
+    return "; ".join(
+        recommendations
+    )
 
 
 def prepare_audit_data(df):
@@ -259,13 +283,17 @@ def prepare_audit_data(df):
         result_type="expand",
     )
 
-    df["rule_risk"] = rule_results[0]
+    df["rule_risk"] = (
+        rule_results[0]
+    )
 
-    df["rule_reason"] = rule_results[1]
+    df["rule_reason"] = (
+        rule_results[1]
+    )
 
 
     # --------------------------------------------------------
-    # STATISTICAL ANOMALY DETECTION
+    # IQR STATISTICAL ANOMALY DETECTION
     # --------------------------------------------------------
 
     anomaly_features = [
@@ -364,7 +392,7 @@ def prepare_audit_data(df):
 
 
     # --------------------------------------------------------
-    # REVIEW RECOMMENDATIONS
+    # RECOMMENDATIONS
     # --------------------------------------------------------
 
     df["audit_recommendation"] = df.apply(
@@ -443,7 +471,6 @@ def get_detected_signals(row):
                     signal
                 )
 
-
     return signals
 
 
@@ -510,6 +537,69 @@ def show_risk_status(risk):
         )
 
 
+def build_claim_dictionary(
+    selected_row,
+):
+
+    return {
+
+        "claim_id":
+            selected_row[
+                "claim_id"
+            ],
+
+        "provider":
+            selected_row[
+                "provider"
+            ],
+
+        "procedure_code":
+            selected_row[
+                "procedure_code"
+            ],
+
+        "billed_amount":
+            selected_row[
+                "billed_amount"
+            ],
+
+        "allowed_amount":
+            selected_row[
+                "allowed_amount"
+            ],
+
+        "units":
+            selected_row[
+                "units"
+            ],
+
+        "variance":
+            selected_row[
+                "variance"
+            ],
+
+        "risk_score":
+            selected_row[
+                "risk_score"
+            ],
+
+        "final_risk":
+            selected_row[
+                "final_risk"
+            ],
+
+        "risk_reason":
+            selected_row[
+                "risk_reason"
+            ],
+
+        "audit_recommendation":
+            selected_row[
+                "audit_recommendation"
+            ],
+    }
+
+
 # ============================================================
 # SESSION STATE
 # ============================================================
@@ -525,6 +615,13 @@ if "ai_summaries" not in st.session_state:
 
     st.session_state[
         "ai_summaries"
+    ] = {}
+
+
+if "rag_summaries" not in st.session_state:
+
+    st.session_state[
+        "rag_summaries"
     ] = {}
 
 
@@ -570,8 +667,8 @@ uploaded_file = st.sidebar.file_uploader(
         "csv"
     ],
     help=(
-        "Upload a properly structured, "
-        "synthetic or de-identified audit CSV."
+        "Upload a synthetic or properly "
+        "de-identified audit CSV."
     ),
 )
 
@@ -629,6 +726,39 @@ with st.sidebar.container(
     )
 
 
+# ============================================================
+# POLICY KNOWLEDGE BASE STATUS
+# ============================================================
+
+with st.sidebar.container(
+    border=True
+):
+
+    st.caption(
+        "POLICY KNOWLEDGE BASE"
+    )
+
+    if policy_count > 0:
+
+        st.write(
+            f"**{policy_count} policy PDF(s)**"
+        )
+
+        st.success(
+            "RAG knowledge base ready"
+        )
+
+    else:
+
+        st.write(
+            "**No policy PDFs detected**"
+        )
+
+        st.warning(
+            "Policy-grounded review unavailable"
+        )
+
+
 st.sidebar.divider()
 
 
@@ -650,27 +780,37 @@ st.sidebar.divider()
 
 
 with st.sidebar.expander(
-    "Prototype Status",
+    "Prototype Architecture",
     expanded=False,
 ):
 
     st.write(
-        "**Risk detection**"
+        "**Rule-Based Detection**"
     )
 
     st.caption(
-        "Deterministic prototype rules identify "
+        "Deterministic prototype checks identify "
         "predefined audit signals."
     )
 
 
     st.write(
-        "**Anomaly detection**"
+        "**Statistical Detection**"
     )
 
     st.caption(
-        "IQR-based statistical analysis identifies "
-        "values outside expected dataset patterns."
+        "IQR analysis identifies values outside "
+        "expected dataset patterns."
+    )
+
+
+    st.write(
+        "**RAG Retrieval**"
+    )
+
+    st.caption(
+        "Relevant passages are retrieved from "
+        "the local audit policy knowledge base."
     )
 
 
@@ -679,15 +819,14 @@ with st.sidebar.expander(
     )
 
     st.caption(
-        "Gemini explains existing findings, answers "
-        "dataset questions and prepares summaries."
+        "Gemini explains structured findings and "
+        "retrieved policy context."
     )
 
 
     st.info(
-        "Risk indicators support human review. "
-        "They do not confirm claim validity, fraud, "
-        "coding errors or payment decisions."
+        "All outputs are decision-support signals. "
+        "Human auditor review remains required."
     )
 
 
@@ -850,7 +989,7 @@ audit_data_for_ai = (
 
 
 # ============================================================
-# GLOBAL PRODUCT HEADER
+# GLOBAL HEADER
 # ============================================================
 
 st.title(
@@ -878,10 +1017,6 @@ def render_dashboard():
         "audit priorities from a single workspace."
     )
 
-
-    # --------------------------------------------------------
-    # KPI SUMMARY
-    # --------------------------------------------------------
 
     k1, k2, k3, k4 = (
         st.columns(4)
@@ -954,10 +1089,6 @@ def render_dashboard():
 
     st.write("")
 
-
-    # --------------------------------------------------------
-    # RISK DISTRIBUTION + ATTENTION
-    # --------------------------------------------------------
 
     risk_col, attention_col = (
         st.columns(
@@ -1102,10 +1233,6 @@ def render_dashboard():
             )
 
 
-    # --------------------------------------------------------
-    # FINANCIAL OVERVIEW
-    # --------------------------------------------------------
-
     st.subheader(
         "Financial Overview"
     )
@@ -1136,10 +1263,6 @@ def render_dashboard():
 
     st.divider()
 
-
-    # --------------------------------------------------------
-    # RISK ANALYTICS
-    # --------------------------------------------------------
 
     st.subheader(
         "Risk Analytics"
@@ -1297,10 +1420,6 @@ def render_dashboard():
             )
 
 
-    # --------------------------------------------------------
-    # PRIORITY CLAIMS
-    # --------------------------------------------------------
-
     st.subheader(
         "Top Priority Claims"
     )
@@ -1388,8 +1507,7 @@ def render_dashboard():
     else:
 
         st.success(
-            "No elevated-risk claims were identified "
-            "in the current dataset."
+            "No elevated-risk claims were identified."
         )
 
 
@@ -1405,13 +1523,9 @@ def render_claims_analysis():
 
     st.caption(
         "Explore patterns, narrow the dataset and "
-        "inspect claims before opening a full investigation."
+        "inspect claims before full investigation."
     )
 
-
-    # --------------------------------------------------------
-    # FILTER WORKSPACE
-    # --------------------------------------------------------
 
     with st.container(
         border=True
@@ -1419,11 +1533,6 @@ def render_claims_analysis():
 
         st.subheader(
             "Filter Claims"
-        )
-
-        st.caption(
-            "Refine the current dataset using "
-            "audit and claim attributes."
         )
 
 
@@ -1436,7 +1545,7 @@ def render_claims_analysis():
 
             selected_risks = st.multiselect(
                 "Risk Level",
-                options=[
+                [
                     "High",
                     "Medium",
                     "Low",
@@ -1462,7 +1571,7 @@ def render_claims_analysis():
 
             selected_providers = st.multiselect(
                 "Provider",
-                options=providers,
+                providers,
                 default=providers,
             )
 
@@ -1480,7 +1589,7 @@ def render_claims_analysis():
 
             selected_procedures = st.multiselect(
                 "Procedure",
-                options=procedures,
+                procedures,
                 default=procedures,
             )
 
@@ -1489,9 +1598,7 @@ def render_claims_analysis():
 
             search_claim = st.text_input(
                 "Claim ID",
-                placeholder=(
-                    "Example: CLM004"
-                ),
+                placeholder="Example: CLM004",
             )
 
 
@@ -1510,10 +1617,6 @@ def render_claims_analysis():
         )
 
 
-    # --------------------------------------------------------
-    # APPLY FILTERS
-    # --------------------------------------------------------
-
     filtered_df = df[
         df[
             "final_risk"
@@ -1523,24 +1626,18 @@ def render_claims_analysis():
         &
         df[
             "provider"
-        ]
-        .astype(str)
-        .isin(
+        ].astype(str).isin(
             selected_providers
         )
         &
         df[
             "procedure_code"
-        ]
-        .astype(str)
-        .isin(
+        ].astype(str).isin(
             selected_procedures
         )
         &
         (
-            df[
-                "variance"
-            ]
+            df["variance"]
             >= minimum_variance
         )
     ].copy()
@@ -1561,10 +1658,6 @@ def render_claims_analysis():
         ]
 
 
-    # --------------------------------------------------------
-    # SUMMARY
-    # --------------------------------------------------------
-
     st.subheader(
         "Current View"
     )
@@ -1573,22 +1666,6 @@ def render_claims_analysis():
     m1, m2, m3, m4 = (
         st.columns(4)
     )
-
-
-    with m1:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Claims",
-                len(filtered_df),
-            )
-
-            st.caption(
-                "Records matching current filters"
-            )
 
 
     elevated_count = len(
@@ -1605,6 +1682,18 @@ def render_claims_analysis():
     )
 
 
+    with m1:
+
+        with st.container(
+            border=True
+        ):
+
+            st.metric(
+                "Claims",
+                len(filtered_df),
+            )
+
+
     with m2:
 
         with st.container(
@@ -1614,10 +1703,6 @@ def render_claims_analysis():
             st.metric(
                 "Elevated Risk",
                 elevated_count,
-            )
-
-            st.caption(
-                "High and medium-risk claims"
             )
 
 
@@ -1632,10 +1717,6 @@ def render_claims_analysis():
                 f"${filtered_df['billed_amount'].sum():,.0f}",
             )
 
-            st.caption(
-                "Total billed amount in current view"
-            )
-
 
     with m4:
 
@@ -1648,17 +1729,6 @@ def render_claims_analysis():
                 f"${filtered_df['variance'].sum():,.0f}",
             )
 
-            st.caption(
-                "Billed amount minus allowed amount"
-            )
-
-
-    st.write("")
-
-
-    # --------------------------------------------------------
-    # VISUAL ANALYSIS
-    # --------------------------------------------------------
 
     visual_col, insight_col = (
         st.columns(
@@ -1678,11 +1748,6 @@ def render_claims_analysis():
 
             st.subheader(
                 "Claim Financial Pattern"
-            )
-
-            st.caption(
-                "Compare billed amount, allowed amount "
-                "and risk across the filtered claims."
             )
 
 
@@ -1711,16 +1776,6 @@ def render_claims_analysis():
                         "Low":
                             "#4C78A8",
                     },
-                    labels={
-                        "allowed_amount":
-                            "Allowed Amount",
-
-                        "billed_amount":
-                            "Billed Amount",
-
-                        "final_risk":
-                            "Risk",
-                    },
                 )
 
 
@@ -1732,7 +1787,6 @@ def render_claims_analysis():
                         t=10,
                         b=20,
                     ),
-                    legend_title_text="Risk",
                 )
 
 
@@ -1748,8 +1802,7 @@ def render_claims_analysis():
             else:
 
                 st.info(
-                    "No claims match the current filters. "
-                    "Adjust one or more filters to continue."
+                    "No claims match the current filters."
                 )
 
 
@@ -1761,11 +1814,6 @@ def render_claims_analysis():
 
             st.subheader(
                 "Risk Mix"
-            )
-
-            st.caption(
-                "Risk distribution within the "
-                "current filtered view."
             )
 
 
@@ -1794,7 +1842,7 @@ def render_claims_analysis():
                 ]
 
 
-                risk_chart = px.pie(
+                chart = px.pie(
                     risk_mix,
                     names="Risk",
                     values="Claims",
@@ -1813,26 +1861,19 @@ def render_claims_analysis():
                 )
 
 
-                risk_chart.update_traces(
-                    textinfo="label+value",
-                    textposition="inside",
-                )
-
-
-                risk_chart.update_layout(
-                    height=275,
+                chart.update_layout(
+                    height=300,
                     margin=dict(
                         l=5,
                         r=5,
                         t=5,
                         b=5,
                     ),
-                    showlegend=False,
                 )
 
 
                 st.plotly_chart(
-                    risk_chart,
+                    chart,
                     use_container_width=True,
                     config={
                         "displayModeBar":
@@ -1841,52 +1882,11 @@ def render_claims_analysis():
                 )
 
 
-                high_view = len(
-                    filtered_df[
-                        filtered_df[
-                            "final_risk"
-                        ]
-                        == "High"
-                    ]
-                )
-
-
-                if high_view > 0:
-
-                    st.warning(
-                        f"{high_view} high-risk claim(s) "
-                        "are present in the current view."
-                    )
-
-                else:
-
-                    st.success(
-                        "No high-risk claims are present "
-                        "in the current view."
-                    )
-
-            else:
-
-                st.info(
-                    "Risk distribution will appear "
-                    "when claims match the filters."
-                )
-
-
-    # --------------------------------------------------------
-    # CLAIM INSPECTOR
-    # --------------------------------------------------------
-
     st.divider()
 
 
     st.subheader(
         "Claim Inspector"
-    )
-
-    st.caption(
-        "Perform a quick review before opening "
-        "the full Claim Investigation workspace."
     )
 
 
@@ -1930,72 +1930,30 @@ def render_claims_analysis():
                 border=True
             ):
 
-                st.caption(
-                    "CLAIM SNAPSHOT"
-                )
-
-
                 st.subheader(
                     selected_row[
                         "claim_id"
                     ]
                 )
 
-
                 st.write(
                     f"**{selected_row['provider']}**"
                 )
 
-
-                st.caption(
-                    f"Procedure "
-                    f"{selected_row['procedure_code']}"
-                )
-
-
-                financial1, financial2 = (
-                    st.columns(2)
-                )
-
-
-                financial1.metric(
+                st.metric(
                     "Billed",
                     f"${selected_row['billed_amount']:,.0f}",
                 )
 
-
-                financial2.metric(
+                st.metric(
                     "Allowed",
                     f"${selected_row['allowed_amount']:,.0f}",
                 )
-
 
                 st.metric(
                     "Variance",
                     f"${selected_row['variance']:,.0f}",
                 )
-
-
-                st.write(
-                    "**Risk Score**"
-                )
-
-
-                st.progress(
-                    min(
-                        float(
-                            selected_row[
-                                "risk_score"
-                            ]
-                        )
-                        / 4,
-                        1.0,
-                    ),
-                    text=(
-                        f"{int(selected_row['risk_score'])}/4"
-                    ),
-                )
-
 
                 show_risk_status(
                     selected_row[
@@ -2016,49 +1974,19 @@ def render_claims_analysis():
 
 
                 st.write(
-                    "**Why the claim was classified this way**"
+                    "**Risk Evidence**"
                 )
 
-
-                if (
+                st.write(
                     selected_row[
-                        "final_risk"
+                        "risk_reason"
                     ]
-                    == "High"
-                ):
-
-                    st.error(
-                        selected_row[
-                            "risk_reason"
-                        ]
-                    )
-
-                elif (
-                    selected_row[
-                        "final_risk"
-                    ]
-                    == "Medium"
-                ):
-
-                    st.warning(
-                        selected_row[
-                            "risk_reason"
-                        ]
-                    )
-
-                else:
-
-                    st.info(
-                        selected_row[
-                            "risk_reason"
-                        ]
-                    )
+                )
 
 
                 st.write(
-                    "**Recommended review action**"
+                    "**Recommended Review**"
                 )
-
 
                 st.write(
                     selected_row[
@@ -2079,28 +2007,11 @@ def render_claims_analysis():
                 )
 
 
-    else:
-
-        st.warning(
-            "No claims are available for inspection "
-            "with the current filters."
-        )
-
-
-    # --------------------------------------------------------
-    # CLAIMS EXPLORER
-    # --------------------------------------------------------
-
     st.divider()
 
 
     st.subheader(
         "Claims Explorer"
-    )
-
-    st.caption(
-        "Detailed claim records for the "
-        "current filtered view."
     )
 
 
@@ -2119,46 +2030,6 @@ def render_claims_analysis():
         ],
         use_container_width=True,
         hide_index=True,
-        column_config={
-
-            "claim_id":
-                "Claim ID",
-
-            "provider":
-                "Provider",
-
-            "procedure_code":
-                "Procedure",
-
-            "billed_amount":
-                st.column_config.NumberColumn(
-                    "Billed",
-                    format="$%.0f",
-                ),
-
-            "allowed_amount":
-                st.column_config.NumberColumn(
-                    "Allowed",
-                    format="$%.0f",
-                ),
-
-            "variance":
-                st.column_config.NumberColumn(
-                    "Variance",
-                    format="$%.0f",
-                ),
-
-            "risk_score":
-                st.column_config.ProgressColumn(
-                    "Risk Score",
-                    min_value=0,
-                    max_value=4,
-                    format="%d",
-                ),
-
-            "final_risk":
-                "Risk",
-        },
     )
 
 
@@ -2167,9 +2038,7 @@ def render_claims_analysis():
         data=filtered_df.to_csv(
             index=False
         ),
-        file_name=(
-            "filtered_audit_claims.csv"
-        ),
+        file_name="filtered_audit_claims.csv",
         mime="text/csv",
     )
 
@@ -2209,15 +2078,11 @@ def render_priority_queue():
     if priority_df.empty:
 
         st.success(
-            "No claims currently require elevated-risk review."
+            "No claims currently require priority review."
         )
 
         return
 
-
-    # --------------------------------------------------------
-    # SUMMARY
-    # --------------------------------------------------------
 
     s1, s2, s3, s4 = (
         st.columns(4)
@@ -2235,10 +2100,6 @@ def render_priority_queue():
                 len(priority_df),
             )
 
-            st.caption(
-                "Claims in the elevated-risk queue"
-            )
-
 
     with s2:
 
@@ -2249,10 +2110,6 @@ def render_priority_queue():
             st.metric(
                 "Priority Variance",
                 f"${priority_df['variance'].sum():,.0f}",
-            )
-
-            st.caption(
-                "Financial variance within the queue"
             )
 
 
@@ -2269,10 +2126,6 @@ def render_priority_queue():
                 ].nunique(),
             )
 
-            st.caption(
-                "Providers represented in the queue"
-            )
-
 
     with s4:
 
@@ -2284,13 +2137,6 @@ def render_priority_queue():
                 "Average Risk Score",
                 f"{priority_df['risk_score'].mean():.1f}/4",
             )
-
-            st.caption(
-                "Average queue risk score"
-            )
-
-
-    st.write("")
 
 
     top_claim = (
@@ -2308,10 +2154,6 @@ def render_priority_queue():
     )
 
 
-    # --------------------------------------------------------
-    # TOP PRIORITY CLAIM
-    # --------------------------------------------------------
-
     with hero_col:
 
         with st.container(
@@ -2323,44 +2165,21 @@ def render_priority_queue():
             )
 
 
-            title_col, risk_col = (
-                st.columns(
-                    [
-                        3,
-                        1,
-                    ]
-                )
+            st.subheader(
+                top_claim[
+                    "claim_id"
+                ]
             )
 
+            st.write(
+                f"**{top_claim['provider']}**"
+            )
 
-            with title_col:
-
-                st.subheader(
-                    top_claim[
-                        "claim_id"
-                    ]
-                )
-
-                st.write(
-                    f"**{top_claim['provider']}**"
-                )
-
-                st.caption(
-                    f"Procedure "
-                    f"{top_claim['procedure_code']}"
-                )
-
-
-            with risk_col:
-
-                show_risk_status(
-                    top_claim[
-                        "final_risk"
-                    ]
-                )
-
-
-            st.divider()
+            show_risk_status(
+                top_claim[
+                    "final_risk"
+                ]
+            )
 
 
             c1, c2, c3 = (
@@ -2386,11 +2205,6 @@ def render_priority_queue():
             )
 
 
-            st.write(
-                "**Risk Score**"
-            )
-
-
             st.progress(
                 min(
                     float(
@@ -2402,41 +2216,26 @@ def render_priority_queue():
                     1.0,
                 ),
                 text=(
+                    f"Risk Score "
                     f"{int(top_claim['risk_score'])}/4"
                 ),
             )
 
 
             st.write(
-                "**Detected signals**"
+                "**Detected Signals**"
             )
 
 
-            signals = (
+            for signal in (
                 get_detected_signals(
                     top_claim
                 )
-            )
-
-
-            if signals:
-
-                for signal in signals:
-
-                    st.write(
-                        f"• {signal}"
-                    )
-
-            else:
+            ):
 
                 st.write(
-                    "No additional statistical signals detected."
+                    f"• {signal}"
                 )
-
-
-            st.write(
-                "**Recommended review**"
-            )
 
 
             st.info(
@@ -2460,10 +2259,6 @@ def render_priority_queue():
             )
 
 
-    # --------------------------------------------------------
-    # TRIAGE VISUAL
-    # --------------------------------------------------------
-
     with triage_col:
 
         with st.container(
@@ -2471,55 +2266,7 @@ def render_priority_queue():
         ):
 
             st.subheader(
-                "Audit Triage"
-            )
-
-            st.caption(
-                "How the current dataset narrows "
-                "into the elevated-risk queue."
-            )
-
-
-            t1, t2 = (
-                st.columns(2)
-            )
-
-
-            t1.metric(
-                "All Claims",
-                total_claims,
-            )
-
-
-            t2.metric(
-                "Elevated Risk",
-                len(priority_df),
-            )
-
-
-            queue_ratio = (
-                len(priority_df)
-                / total_claims
-                if total_claims
-                else 0
-            )
-
-
-            st.progress(
-                queue_ratio,
-                text=(
-                    f"{len(priority_df)} of "
-                    f"{total_claims} claims "
-                    "are in the priority queue"
-                ),
-            )
-
-
-            st.divider()
-
-
-            st.write(
-                "**Financial Variance by Priority Claim**"
+                "Financial Exposure by Claim"
             )
 
 
@@ -2540,16 +2287,6 @@ def render_priority_queue():
                     "Medium":
                         "#F2C14E",
                 },
-                labels={
-                    "variance":
-                        "Variance",
-
-                    "claim_id":
-                        "Claim",
-
-                    "final_risk":
-                        "Risk",
-                },
             )
 
 
@@ -2560,14 +2297,13 @@ def render_priority_queue():
 
 
             exposure_chart.update_layout(
-                height=245,
+                height=310,
                 margin=dict(
                     l=10,
                     r=45,
                     t=10,
                     b=30,
                 ),
-                legend_title_text="Risk",
             )
 
 
@@ -2581,10 +2317,6 @@ def render_priority_queue():
             )
 
 
-    # --------------------------------------------------------
-    # NEXT CLAIMS
-    # --------------------------------------------------------
-
     remaining_claims = (
         priority_df.iloc[
             1:4
@@ -2596,10 +2328,6 @@ def render_priority_queue():
 
         st.subheader(
             "Next in Queue"
-        )
-
-        st.caption(
-            "Claims following the highest-priority record."
         )
 
 
@@ -2631,18 +2359,15 @@ def render_priority_queue():
                         f"PRIORITY #{position}"
                     )
 
-
                     st.subheader(
                         row[
                             "claim_id"
                         ]
                     )
 
-
                     st.write(
                         f"**{row['provider']}**"
                     )
-
 
                     show_risk_status(
                         row[
@@ -2650,29 +2375,10 @@ def render_priority_queue():
                         ]
                     )
 
-
                     st.metric(
                         "Variance",
                         f"${row['variance']:,.0f}",
                     )
-
-
-                    st.progress(
-                        min(
-                            float(
-                                row[
-                                    "risk_score"
-                                ]
-                            )
-                            / 4,
-                            1.0,
-                        ),
-                        text=(
-                            f"Risk "
-                            f"{int(row['risk_score'])}/4"
-                        ),
-                    )
-
 
                     st.button(
                         "Review Claim",
@@ -2690,10 +2396,6 @@ def render_priority_queue():
                     )
 
 
-    # --------------------------------------------------------
-    # FULL QUEUE
-    # --------------------------------------------------------
-
     st.divider()
 
 
@@ -2702,80 +2404,19 @@ def render_priority_queue():
         expanded=False,
     ):
 
-        display_df = (
-            priority_df[
-                [
-                    "claim_id",
-                    "provider",
-                    "procedure_code",
-                    "billed_amount",
-                    "allowed_amount",
-                    "variance",
-                    "risk_score",
-                    "final_risk",
-                    "risk_reason",
-                ]
-            ]
-        )
-
-
         st.dataframe(
-            display_df,
+            priority_df,
             use_container_width=True,
             hide_index=True,
-            column_config={
-
-                "claim_id":
-                    "Claim ID",
-
-                "provider":
-                    "Provider",
-
-                "procedure_code":
-                    "Procedure",
-
-                "billed_amount":
-                    st.column_config.NumberColumn(
-                        "Billed",
-                        format="$%.0f",
-                    ),
-
-                "allowed_amount":
-                    st.column_config.NumberColumn(
-                        "Allowed",
-                        format="$%.0f",
-                    ),
-
-                "variance":
-                    st.column_config.NumberColumn(
-                        "Variance",
-                        format="$%.0f",
-                    ),
-
-                "risk_score":
-                    st.column_config.ProgressColumn(
-                        "Risk Score",
-                        min_value=0,
-                        max_value=4,
-                    ),
-
-                "final_risk":
-                    "Risk",
-
-                "risk_reason":
-                    "Risk Evidence",
-            },
         )
 
 
         st.download_button(
             "Download Priority Queue",
-            data=display_df.to_csv(
+            data=priority_df.to_csv(
                 index=False
             ),
-            file_name=(
-                "priority_audit_queue.csv"
-            ),
+            file_name="priority_audit_queue.csv",
             mime="text/csv",
         )
 
@@ -2791,8 +2432,8 @@ def render_claim_review():
     )
 
     st.caption(
-        "Review claim details, inspect detected signals "
-        "and use AI-assisted explanations to support audit review."
+        "Review claim evidence, inspect detected signals "
+        "and use AI-assisted policy context."
     )
 
 
@@ -2833,9 +2474,7 @@ def render_claim_review():
         selected_claim = st.selectbox(
             "Select Claim",
             claim_ids,
-            key=(
-                "claim_review_selector"
-            ),
+            key="claim_review_selector",
         )
 
 
@@ -2884,24 +2523,20 @@ def render_claim_review():
         f"${selected_row['billed_amount']:,.0f}",
     )
 
-
     m2.metric(
         "Allowed",
         f"${selected_row['allowed_amount']:,.0f}",
     )
-
 
     m3.metric(
         "Variance",
         f"${selected_row['variance']:,.0f}",
     )
 
-
     m4.metric(
         "Risk Score",
         f"{int(selected_row['risk_score'])}/4",
     )
-
 
     m5.metric(
         "Anomaly Score",
@@ -2927,9 +2562,9 @@ def render_claim_review():
     )
 
 
-    # --------------------------------------------------------
-    # OVERVIEW
-    # --------------------------------------------------------
+    # ========================================================
+    # OVERVIEW TAB
+    # ========================================================
 
     with overview_tab:
 
@@ -2964,11 +2599,6 @@ def render_claim_review():
                 st.metric(
                     "Financial Variance",
                     f"${selected_row['variance']:,.2f}",
-                    delta=(
-                        f"{selected_row['variance_percentage']:.0f}% "
-                        "relative to allowed"
-                    ),
-                    delta_color="inverse",
                 )
 
 
@@ -3052,41 +2682,21 @@ def render_claim_review():
         )
 
 
-        if (
+        st.info(
             selected_row[
-                "final_risk"
+                "audit_recommendation"
             ]
-            == "High"
-        ):
-
-            st.warning(
-                selected_row[
-                    "audit_recommendation"
-                ]
-            )
-
-        else:
-
-            st.info(
-                selected_row[
-                    "audit_recommendation"
-                ]
-            )
+        )
 
 
-    # --------------------------------------------------------
-    # RISK EVIDENCE
-    # --------------------------------------------------------
+    # ========================================================
+    # RISK EVIDENCE TAB
+    # ========================================================
 
     with evidence_tab:
 
         st.subheader(
             "Risk Assessment"
-        )
-
-        st.caption(
-            "Risk combines prototype rules "
-            "and statistical anomaly indicators."
         )
 
 
@@ -3217,58 +2827,24 @@ def render_claim_review():
         else:
 
             st.success(
-                "No significant audit signals "
-                "were detected for this claim."
+                "No significant audit signals detected."
             )
 
 
         st.subheader(
-            "Why This Claim Needs Attention"
+            "Risk Evidence"
         )
 
 
-        if (
+        st.info(
             selected_row[
-                "final_risk"
+                "risk_reason"
             ]
-            == "High"
-        ):
-
-            st.error(
-                selected_row[
-                    "risk_reason"
-                ]
-            )
-
-        elif (
-            selected_row[
-                "final_risk"
-            ]
-            == "Medium"
-        ):
-
-            st.warning(
-                selected_row[
-                    "risk_reason"
-                ]
-            )
-
-        else:
-
-            st.info(
-                selected_row[
-                    "risk_reason"
-                ]
-            )
+        )
 
 
         st.subheader(
             "Auditor Review Checklist"
-        )
-
-        st.caption(
-            "Use these actions as review prompts. "
-            "They are not automated claim decisions."
         )
 
 
@@ -3288,149 +2864,36 @@ def render_claim_review():
             )
 
 
-    # --------------------------------------------------------
-    # AI REVIEW
-    # --------------------------------------------------------
+    # ========================================================
+    # AI REVIEW TAB
+    # ========================================================
 
     with ai_tab:
 
-        st.subheader(
-            "Gemini-Assisted Audit Review"
+        ai_summary_tab, rag_tab = (
+            st.tabs(
+                [
+                    "AI Summary",
+                    "Policy-Grounded Review",
+                ]
+            )
         )
 
 
-        st.caption(
-            "Generate an auditor-friendly explanation "
-            "from findings already produced by the audit engine."
-        )
+        # ----------------------------------------------------
+        # STANDARD AI SUMMARY
+        # ----------------------------------------------------
 
+        with ai_summary_tab:
 
-        with st.container(
-            border=True
-        ):
-
-            st.write(
-                "**AI context includes**"
-            )
-
-            st.write(
-                "• Claim financial information"
-            )
-
-            st.write(
-                "• Risk score and risk classification"
-            )
-
-            st.write(
-                "• Detected rule and anomaly signals"
-            )
-
-            st.write(
-                "• Current audit recommendation"
+            st.subheader(
+                "Gemini-Assisted Audit Summary"
             )
 
 
-            st.info(
-                "Gemini explains existing findings. "
-                "It does not approve, deny or adjudicate claims."
-            )
-
-
-            generate_button = st.button(
-                "Generate AI Audit Summary",
-                type="primary",
-                use_container_width=True,
-            )
-
-
-        if generate_button:
-
-            claim_data = {
-
-                "claim_id":
-                    selected_row[
-                        "claim_id"
-                    ],
-
-                "provider":
-                    selected_row[
-                        "provider"
-                    ],
-
-                "procedure_code":
-                    selected_row[
-                        "procedure_code"
-                    ],
-
-                "billed_amount":
-                    selected_row[
-                        "billed_amount"
-                    ],
-
-                "allowed_amount":
-                    selected_row[
-                        "allowed_amount"
-                    ],
-
-                "units":
-                    selected_row[
-                        "units"
-                    ],
-
-                "variance":
-                    selected_row[
-                        "variance"
-                    ],
-
-                "risk_score":
-                    selected_row[
-                        "risk_score"
-                    ],
-
-                "final_risk":
-                    selected_row[
-                        "final_risk"
-                    ],
-
-                "risk_reason":
-                    selected_row[
-                        "risk_reason"
-                    ],
-
-                "audit_recommendation":
-                    selected_row[
-                        "audit_recommendation"
-                    ],
-            }
-
-
-            with st.spinner(
-                "Gemini is preparing the audit summary..."
-            ):
-
-                result = (
-                    generate_audit_summary(
-                        claim_data
-                    )
-                )
-
-
-            st.session_state[
-                "ai_summaries"
-            ][
-                selected_claim
-            ] = result
-
-
-        if (
-            selected_claim
-            in st.session_state[
-                "ai_summaries"
-            ]
-        ):
-
-            st.success(
-                "AI-assisted review generated."
+            st.caption(
+                "Gemini explains findings already "
+                "produced by the audit engine."
             )
 
 
@@ -3438,19 +2901,321 @@ def render_claim_review():
                 border=True
             ):
 
-                st.markdown(
-                    st.session_state[
-                        "ai_summaries"
-                    ][
-                        selected_claim
-                    ]
+                st.write(
+                    "**AI context includes**"
+                )
+
+                st.write(
+                    "• Claim financial information"
+                )
+
+                st.write(
+                    "• Risk score and classification"
+                )
+
+                st.write(
+                    "• Rule and anomaly findings"
+                )
+
+                st.write(
+                    "• Audit recommendation"
                 )
 
 
-            st.caption(
-                "Review AI-generated content before "
-                "using it in an audit workflow."
+                st.info(
+                    "Gemini does not approve, deny "
+                    "or adjudicate the claim."
+                )
+
+
+                generate_button = st.button(
+                    "Generate AI Audit Summary",
+                    type="primary",
+                    use_container_width=True,
+                    key="generate_standard_ai_summary",
+                )
+
+
+            if generate_button:
+
+                claim_data = (
+                    build_claim_dictionary(
+                        selected_row
+                    )
+                )
+
+
+                with st.spinner(
+                    "Gemini is preparing the audit summary..."
+                ):
+
+                    result = (
+                        generate_audit_summary(
+                            claim_data
+                        )
+                    )
+
+
+                st.session_state[
+                    "ai_summaries"
+                ][
+                    selected_claim
+                ] = result
+
+
+            if (
+                selected_claim
+                in st.session_state[
+                    "ai_summaries"
+                ]
+            ):
+
+                st.success(
+                    "AI-assisted summary generated."
+                )
+
+
+                with st.container(
+                    border=True
+                ):
+
+                    st.markdown(
+                        st.session_state[
+                            "ai_summaries"
+                        ][
+                            selected_claim
+                        ]
+                    )
+
+
+        # ----------------------------------------------------
+        # RAG POLICY-GROUNDED REVIEW
+        # ----------------------------------------------------
+
+        with rag_tab:
+
+            st.subheader(
+                "Policy-Grounded Audit Review"
             )
+
+
+            st.caption(
+                "Retrieve relevant audit policy passages "
+                "and use them as context for the AI review."
+            )
+
+
+            if policy_count == 0:
+
+                st.warning(
+                    "No audit policy PDFs are available "
+                    "in knowledge_base/policies."
+                )
+
+            else:
+
+                with st.container(
+                    border=True
+                ):
+
+                    st.write(
+                        "**RAG workflow**"
+                    )
+
+                    st.write(
+                        "Claim findings"
+                    )
+
+                    st.write(
+                        "↓"
+                    )
+
+                    st.write(
+                        f"Search across {policy_count} policy PDF(s)"
+                    )
+
+                    st.write(
+                        "↓"
+                    )
+
+                    st.write(
+                        "Retrieve relevant policy passages"
+                    )
+
+                    st.write(
+                        "↓"
+                    )
+
+                    st.write(
+                        "Gemini generates a grounded audit explanation"
+                    )
+
+
+                    st.info(
+                        "The retrieved policy context supports "
+                        "human review. It does not determine "
+                        "whether the claim is valid or invalid."
+                    )
+
+
+                    rag_button = st.button(
+                        "Generate Policy-Grounded Review",
+                        type="primary",
+                        use_container_width=True,
+                        key="generate_rag_review",
+                    )
+
+
+                if rag_button:
+
+                    claim_data = (
+                        build_claim_dictionary(
+                            selected_row
+                        )
+                    )
+
+
+                    with st.spinner(
+                        "Retrieving policy context and "
+                        "generating grounded review..."
+                    ):
+
+                        try:
+
+                            rag_result = (
+                                generate_policy_grounded_audit_summary(
+                                    claim_data
+                                )
+                            )
+
+
+                            st.session_state[
+                                "rag_summaries"
+                            ][
+                                selected_claim
+                            ] = rag_result
+
+
+                        except Exception as error:
+
+                            st.error(
+                                "Policy-grounded review failed: "
+                                f"{error}"
+                            )
+
+
+                if (
+                    selected_claim
+                    in st.session_state[
+                        "rag_summaries"
+                    ]
+                ):
+
+                    rag_result = (
+                        st.session_state[
+                            "rag_summaries"
+                        ][
+                            selected_claim
+                        ]
+                    )
+
+
+                    st.success(
+                        "Policy-grounded review generated."
+                    )
+
+
+                    with st.container(
+                        border=True
+                    ):
+
+                        st.markdown(
+                            rag_result.get(
+                                "answer",
+                                "No answer was generated.",
+                            )
+                        )
+
+
+                    st.subheader(
+                        "Retrieved Policy Sources"
+                    )
+
+
+                    sources = (
+                        rag_result.get(
+                            "sources",
+                            [],
+                        )
+                    )
+
+
+                    if sources:
+
+                        source_columns = st.columns(
+                            min(
+                                len(sources),
+                                3,
+                            )
+                        )
+
+
+                        for index, source in enumerate(
+                            sources
+                        ):
+
+                            with source_columns[
+                                index
+                                % len(
+                                    source_columns
+                                )
+                            ]:
+
+                                with st.container(
+                                    border=True
+                                ):
+
+                                    st.caption(
+                                        f"SOURCE {index + 1}"
+                                    )
+
+                                    st.write(
+                                        f"**{source['source']}**"
+                                    )
+
+                                    st.write(
+                                        f"Page {source['page']}"
+                                    )
+
+                                    st.caption(
+                                        f"Retrieval score: "
+                                        f"{source['score']:.2f}"
+                                    )
+
+                    else:
+
+                        st.info(
+                            "No policy passages were retrieved."
+                        )
+
+
+                    with st.expander(
+                        "View Retrieval Query",
+                        expanded=False,
+                    ):
+
+                        st.code(
+                            rag_result.get(
+                                "retrieval_query",
+                                "",
+                            )
+                        )
+
+
+                    st.caption(
+                        "Policy references come from the local "
+                        "demo knowledge base. Human review is required."
+                    )
 
 
 # ============================================================
@@ -3465,81 +3230,41 @@ def render_ai_copilot():
 
     st.caption(
         "Ask natural-language questions about claims, "
-        "providers, financial variance and audit risk patterns."
+        "providers, financial variance and audit risk."
     )
 
-
-    # --------------------------------------------------------
-    # CONTEXT SUMMARY
-    # --------------------------------------------------------
 
     c1, c2, c3, c4 = (
         st.columns(4)
     )
 
 
-    with c1:
+    c1.metric(
+        "Claims in Context",
+        total_claims,
+    )
 
-        with st.container(
-            border=True
-        ):
+    c2.metric(
+        "High Risk",
+        high_risk_claims,
+    )
 
-            st.metric(
-                "Claims in Context",
-                total_claims,
-            )
+    c3.metric(
+        "Priority Variance",
+        f"${priority_variance:,.0f}",
+    )
 
-
-    with c2:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "High Risk",
-                high_risk_claims,
-            )
-
-
-    with c3:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Priority Variance",
-                f"${priority_variance:,.0f}",
-            )
-
-
-    with c4:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Priority Provider",
-                top_provider,
-            )
+    c4.metric(
+        "Policy PDFs",
+        policy_count,
+    )
 
 
     st.divider()
 
 
-    # --------------------------------------------------------
-    # QUICK QUESTIONS
-    # --------------------------------------------------------
-
     st.subheader(
         "Quick Investigations"
-    )
-
-    st.caption(
-        "Use a common audit question "
-        "or enter your own below."
     )
 
 
@@ -3573,7 +3298,7 @@ def render_ai_copilot():
         use_container_width=True,
         on_click=set_copilot_question,
         args=(
-            "Which provider has the most elevated-risk claims and why?",
+            "Which provider has the most elevated-risk claims?",
         ),
     )
 
@@ -3583,17 +3308,10 @@ def render_ai_copilot():
         use_container_width=True,
         on_click=set_copilot_question,
         args=(
-            "Which claims should receive audit attention first based on the current risk indicators?",
+            "Which claims should receive audit attention first?",
         ),
     )
 
-
-    st.write("")
-
-
-    # --------------------------------------------------------
-    # COPILOT WORKSPACE
-    # --------------------------------------------------------
 
     question_col, context_col = (
         st.columns(
@@ -3615,29 +3333,23 @@ def render_ai_copilot():
                 "Ask Audit Copilot"
             )
 
-            st.caption(
-                "Questions are answered using the "
-                "currently analyzed dataset."
-            )
-
 
             question = st.text_area(
                 "Audit Question",
                 key="copilot_question",
                 height=120,
                 placeholder=(
-                    "Example: Why was CLM004 flagged, "
-                    "and what should the auditor review?"
+                    "Example: Why was CLM004 flagged?"
                 ),
             )
 
 
-            button1, button2 = (
+            b1, b2 = (
                 st.columns(2)
             )
 
 
-            with button1:
+            with b1:
 
                 ask_button = st.button(
                     "Analyze with Copilot",
@@ -3646,7 +3358,7 @@ def render_ai_copilot():
                 )
 
 
-            with button2:
+            with b2:
 
                 st.button(
                     "Clear Conversation",
@@ -3665,11 +3377,6 @@ def render_ai_copilot():
                 "Dataset Context"
             )
 
-            st.caption(
-                "Current signals available "
-                "to the Copilot."
-            )
-
 
             st.write(
                 "**Highest-variance claim**"
@@ -3681,56 +3388,43 @@ def render_ai_copilot():
                 ]
             )
 
-            st.caption(
-                f"${highest_variance_claim['variance']:,.0f} variance"
-            )
-
 
             st.divider()
 
 
             st.write(
-                "**Provider with most elevated-risk claims**"
+                "**Priority provider**"
             )
 
             st.write(
                 top_provider
             )
 
-            st.caption(
-                f"{top_provider_count} elevated-risk claim(s)"
-            )
-
 
             st.divider()
 
 
             st.write(
-                "**Claims with multiple anomaly signals**"
+                "**Policy knowledge base**"
             )
 
             st.write(
-                multi_signal_claims
+                f"{policy_count} PDF(s)"
             )
 
-
-    # --------------------------------------------------------
-    # ASK GEMINI
-    # --------------------------------------------------------
 
     if ask_button:
 
         if not question.strip():
 
             st.warning(
-                "Enter an audit question before "
-                "running the Copilot."
+                "Enter an audit question."
             )
 
         else:
 
             with st.spinner(
-                "Audit Copilot is analyzing the dataset..."
+                "Audit Copilot is analyzing..."
             ):
 
                 answer = (
@@ -3754,10 +3448,6 @@ def render_ai_copilot():
             )
 
 
-    # --------------------------------------------------------
-    # CONVERSATION + GUARDRAILS
-    # --------------------------------------------------------
-
     st.divider()
 
 
@@ -3776,11 +3466,6 @@ def render_ai_copilot():
         if st.session_state[
             "copilot_history"
         ]:
-
-            st.subheader(
-                "Investigation History"
-            )
-
 
             for conversation in reversed(
                 st.session_state[
@@ -3811,19 +3496,9 @@ def render_ai_copilot():
 
         else:
 
-            with st.container(
-                border=True
-            ):
-
-                st.info(
-                    "No Copilot investigation "
-                    "has been started yet."
-                )
-
-                st.write(
-                    "Try one of the Quick Investigations "
-                    "or ask a question about the dataset."
-                )
+            st.info(
+                "No investigation started yet."
+            )
 
 
     with guardrail_tab:
@@ -3832,68 +3507,50 @@ def render_ai_copilot():
             border=True
         ):
 
-            st.subheader(
-                "Copilot Scope"
+            st.write(
+                "**Copilot supports**"
+            )
+
+            st.write(
+                "• Finding elevated-risk claims"
+            )
+
+            st.write(
+                "• Comparing providers"
+            )
+
+            st.write(
+                "• Explaining risk signals"
+            )
+
+            st.write(
+                "• Prioritizing records for review"
+            )
+
+            st.write(
+                "• Summarizing financial variance"
             )
 
 
-            can_col, cannot_col = (
-                st.columns(2)
+            st.write(
+                "**Copilot does not**"
             )
 
+            st.write(
+                "• Approve or deny claims"
+            )
 
-            with can_col:
+            st.write(
+                "• Confirm fraud"
+            )
 
-                st.write(
-                    "**Can support**"
-                )
+            st.write(
+                "• Make clinical conclusions"
+            )
 
-                st.write(
-                    "• Finding elevated-risk claims"
-                )
-
-                st.write(
-                    "• Comparing providers"
-                )
-
-                st.write(
-                    "• Explaining existing risk signals"
-                )
-
-                st.write(
-                    "• Prioritizing records for review"
-                )
-
-                st.write(
-                    "• Summarizing financial variance"
-                )
-
-
-            with cannot_col:
-
-                st.write(
-                    "**Does not**"
-                )
-
-                st.write(
-                    "• Approve or deny claims"
-                )
-
-                st.write(
-                    "• Confirm fraud or improper billing"
-                )
-
-                st.write(
-                    "• Make clinical determinations"
-                )
-
-                st.write(
-                    "• Replace auditor judgment"
-                )
-
-                st.write(
-                    "• Invent missing claim information"
-                )
+            st.write(
+                "• Replace auditor judgment"
+            )
 
 
 # ============================================================
@@ -3908,8 +3565,7 @@ def render_executive_report():
 
     st.caption(
         "Management-level view of audit risk, "
-        "financial variance, provider patterns "
-        "and priority findings."
+        "financial variance and priority findings."
     )
 
 
@@ -3930,93 +3586,32 @@ def render_executive_report():
     )
 
 
-    # --------------------------------------------------------
-    # KPI SUMMARY
-    # --------------------------------------------------------
-
     k1, k2, k3, k4 = (
         st.columns(4)
     )
 
 
-    with k1:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Claims Analyzed",
-                total_claims,
-            )
-
-            st.caption(
-                "Claims included in current analysis"
-            )
-
-
-    with k2:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Elevated Risk",
-                elevated_risk,
-            )
-
-            st.caption(
-                f"{elevated_rate:.0f}% of analyzed claims"
-            )
-
-
-    with k3:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Financial Variance",
-                f"${total_variance:,.0f}",
-            )
-
-            st.caption(
-                "Total billed amount minus allowed amount"
-            )
-
-
-    with k4:
-
-        with st.container(
-            border=True
-        ):
-
-            st.metric(
-                "Priority Provider",
-                top_provider,
-            )
-
-            st.caption(
-                f"{top_provider_count} elevated-risk claim(s)"
-            )
-
-
-    st.write("")
-
-
-    # --------------------------------------------------------
-    # EXECUTIVE SNAPSHOT
-    # --------------------------------------------------------
-
-    st.subheader(
-        "Executive Snapshot"
+    k1.metric(
+        "Claims Analyzed",
+        total_claims,
     )
 
-    st.caption(
-        "Risk concentration and financial variance "
-        "across the current audit dataset."
+
+    k2.metric(
+        "Elevated Risk",
+        elevated_risk,
+    )
+
+
+    k3.metric(
+        "Financial Variance",
+        f"${total_variance:,.0f}",
+    )
+
+
+    k4.metric(
+        "Policy PDFs",
+        policy_count,
     )
 
 
@@ -4033,11 +3628,6 @@ def render_executive_report():
 
             st.subheader(
                 "Portfolio Risk Profile"
-            )
-
-            st.caption(
-                "Distribution of claims "
-                "by audit risk level."
             )
 
 
@@ -4064,7 +3654,7 @@ def render_executive_report():
             ]
 
 
-            risk_chart = px.pie(
+            chart = px.pie(
                 risk_summary,
                 names="Risk",
                 values="Claims",
@@ -4083,13 +3673,7 @@ def render_executive_report():
             )
 
 
-            risk_chart.update_traces(
-                textinfo="label+value",
-                textposition="inside",
-            )
-
-
-            risk_chart.update_layout(
+            chart.update_layout(
                 height=320,
                 margin=dict(
                     l=5,
@@ -4097,12 +3681,11 @@ def render_executive_report():
                     t=10,
                     b=10,
                 ),
-                legend_title_text="Risk",
             )
 
 
             st.plotly_chart(
-                risk_chart,
+                chart,
                 use_container_width=True,
                 config={
                     "displayModeBar":
@@ -4121,11 +3704,6 @@ def render_executive_report():
                 "Financial Variance by Provider"
             )
 
-            st.caption(
-                "Total claim variance grouped "
-                "by provider."
-            )
-
 
             provider_exposure = (
                 df.groupby(
@@ -4136,10 +3714,6 @@ def render_executive_report():
                         "variance",
                         "sum",
                     ),
-                    claims=(
-                        "claim_id",
-                        "count",
-                    ),
                 )
                 .reset_index()
                 .sort_values(
@@ -4149,32 +3723,22 @@ def render_executive_report():
             )
 
 
-            exposure_chart = px.bar(
+            chart = px.bar(
                 provider_exposure,
                 x="variance",
                 y="provider",
                 orientation="h",
                 text="variance",
-                hover_data=[
-                    "claims"
-                ],
-                labels={
-                    "variance":
-                        "Financial Variance",
-
-                    "provider":
-                        "Provider",
-                },
             )
 
 
-            exposure_chart.update_traces(
+            chart.update_traces(
                 texttemplate="$%{text:,.0f}",
                 textposition="outside",
             )
 
 
-            exposure_chart.update_layout(
+            chart.update_layout(
                 height=320,
                 margin=dict(
                     l=10,
@@ -4186,7 +3750,7 @@ def render_executive_report():
 
 
             st.plotly_chart(
-                exposure_chart,
+                chart,
                 use_container_width=True,
                 config={
                     "displayModeBar":
@@ -4195,126 +3759,8 @@ def render_executive_report():
             )
 
 
-    # --------------------------------------------------------
-    # MANAGEMENT ATTENTION
-    # --------------------------------------------------------
-
-    st.subheader(
-        "Management Attention"
-    )
-
-    st.caption(
-        "Key indicators to review before "
-        "generating the executive summary."
-    )
-
-
-    attention1, attention2, attention3 = (
-        st.columns(3)
-    )
-
-
-    with attention1:
-
-        with st.container(
-            border=True
-        ):
-
-            st.caption(
-                "HIGHEST FINANCIAL VARIANCE"
-            )
-
-
-            st.subheader(
-                highest_variance_claim[
-                    "claim_id"
-                ]
-            )
-
-
-            st.metric(
-                "Variance",
-                f"${highest_variance_claim['variance']:,.0f}",
-            )
-
-
-            st.write(
-                f"**{highest_variance_claim['provider']}**"
-            )
-
-
-            st.caption(
-                f"Procedure "
-                f"{highest_variance_claim['procedure_code']}"
-            )
-
-
-    with attention2:
-
-        with st.container(
-            border=True
-        ):
-
-            st.caption(
-                "HIGH-RISK CLAIMS"
-            )
-
-
-            st.subheader(
-                high_risk_claims
-            )
-
-
-            st.metric(
-                "Priority Variance",
-                f"${priority_variance:,.0f}",
-            )
-
-
-            st.caption(
-                "Variance associated with "
-                "the elevated-risk review queue"
-            )
-
-
-    with attention3:
-
-        with st.container(
-            border=True
-        ):
-
-            st.caption(
-                "PROVIDER WITH MOST ELEVATED RISK"
-            )
-
-
-            st.subheader(
-                top_provider
-            )
-
-
-            st.metric(
-                "Elevated-Risk Claims",
-                top_provider_count,
-            )
-
-
-            st.caption(
-                "Based on the current analyzed dataset"
-            )
-
-
-    # --------------------------------------------------------
-    # PRIORITY FINDINGS
-    # --------------------------------------------------------
-
     st.subheader(
         "Priority Findings"
-    )
-
-    st.caption(
-        "Highest-priority claims based on "
-        "risk score and financial variance."
     )
 
 
@@ -4331,203 +3777,41 @@ def render_executive_report():
             ],
         )
         .head(5)
-        .copy()
     )
 
 
-    if not priority_findings.empty:
-
-        st.dataframe(
-            priority_findings[
-                [
-                    "claim_id",
-                    "provider",
-                    "procedure_code",
-                    "variance",
-                    "risk_score",
-                    "final_risk",
-                ]
-            ],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-
-                "claim_id":
-                    "Claim ID",
-
-                "provider":
-                    "Provider",
-
-                "procedure_code":
-                    "Procedure",
-
-                "variance":
-                    st.column_config.NumberColumn(
-                        "Variance",
-                        format="$%.0f",
-                    ),
-
-                "risk_score":
-                    st.column_config.ProgressColumn(
-                        "Risk Score",
-                        min_value=0,
-                        max_value=4,
-                        format="%d",
-                    ),
-
-                "final_risk":
-                    "Risk",
-            },
-        )
-
-    else:
-
-        st.success(
-            "No elevated-risk priority findings "
-            "were identified."
-        )
+    st.dataframe(
+        priority_findings,
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
     st.divider()
 
 
-    # --------------------------------------------------------
-    # REPORT GENERATION
-    # --------------------------------------------------------
-
     st.subheader(
         "Generate Executive Audit Report"
     )
 
-    st.caption(
-        "Create a concise management summary "
-        "using the analyzed dataset and Gemini."
+
+    st.info(
+        "The executive report summarizes the "
+        "current structured audit findings. "
+        "Human review is required."
     )
 
 
-    contents_col, readiness_col = (
-        st.columns(
-            [
-                1.4,
-                1,
-            ]
-        )
+    generate_report = st.button(
+        "Generate Executive Audit Report",
+        type="primary",
     )
 
-
-    with contents_col:
-
-        with st.container(
-            border=True
-        ):
-
-            st.subheader(
-                "Report Contents"
-            )
-
-
-            left_section, right_section = (
-                st.columns(2)
-            )
-
-
-            with left_section:
-
-                st.write(
-                    "✓ Executive Summary"
-                )
-
-                st.write(
-                    "✓ Audit Risk Overview"
-                )
-
-                st.write(
-                    "✓ Highest Priority Findings"
-                )
-
-
-            with right_section:
-
-                st.write(
-                    "✓ Provider-Level Observations"
-                )
-
-                st.write(
-                    "✓ Financial Variance Analysis"
-                )
-
-                st.write(
-                    "✓ Recommended Audit Focus"
-                )
-
-
-            st.info(
-                "The report summarizes existing audit signals. "
-                "It does not make final claim determinations."
-            )
-
-
-    with readiness_col:
-
-        with st.container(
-            border=True
-        ):
-
-            st.subheader(
-                "Report Readiness"
-            )
-
-
-            st.write(
-                "**Dataset**"
-            )
-
-            st.write(
-                f"{total_claims} claims analyzed"
-            )
-
-
-            st.write(
-                "**Risk analysis**"
-            )
-
-            st.write(
-                f"{elevated_risk} elevated-risk claims"
-            )
-
-
-            st.write(
-                "**Financial analysis**"
-            )
-
-            st.write(
-                f"${total_variance:,.0f} total variance analyzed"
-            )
-
-
-            st.success(
-                "Ready to generate"
-            )
-
-
-            generate_report = st.button(
-                "Generate Executive Audit Report",
-                type="primary",
-                use_container_width=True,
-            )
-
-
-    # --------------------------------------------------------
-    # GENERATE REPORT
-    # --------------------------------------------------------
 
     if generate_report:
 
         report_prompt = f"""
-Create a concise professional executive audit report
-for the current healthcare claims audit dataset.
-
-DATASET SUMMARY
+Create a concise professional executive audit report.
 
 Claims analyzed: {total_claims}
 
@@ -4537,66 +3821,49 @@ Medium-risk claims: {medium_risk_claims}
 
 Low-risk claims: {low_risk_claims}
 
-Elevated-risk percentage: {elevated_rate:.1f}%
+Elevated-risk percentage:
+{elevated_rate:.1f}%
 
-Total billed amount: ${total_billed:,.2f}
+Total billed:
+${total_billed:,.2f}
 
-Total allowed amount: ${total_allowed:,.2f}
+Total allowed:
+${total_allowed:,.2f}
 
-Total financial variance: ${total_variance:,.2f}
+Total variance:
+${total_variance:,.2f}
 
-Priority-queue variance: ${priority_variance:,.2f}
-
-Provider with most elevated-risk claims:
-{top_provider}
-
-Elevated-risk claims for that provider:
-{top_provider_count}
-
-
-Create the report using these sections:
-
-1. Executive Summary
-
-2. Audit Risk Overview
-
-3. Highest Priority Findings
-
-4. Provider-Level Observations
-
-5. Financial Variance Analysis
-
-6. Recommended Audit Focus
+Priority variance:
+${priority_variance:,.2f}
 
 
-Requirements:
+Use these sections:
 
-Mention specific claim IDs where relevant.
+Executive Summary
 
-Use only the supplied audit dataset.
+Audit Risk Overview
 
-Clearly separate observations from recommendations.
+Highest Priority Findings
 
-Do not claim that fraud has occurred.
+Provider-Level Observations
 
-Do not claim that overbilling has been confirmed.
+Financial Variance Analysis
 
-Do not state that coding errors or improper claims
-have been confirmed.
+Recommended Audit Focus
 
-Describe unusual records only as indicators
-requiring auditor review.
+
+Do not confirm fraud.
+
+Do not confirm overbilling.
 
 Do not approve or deny claims.
 
-Write for an executive or audit-management audience.
-
-Keep the report concise, professional and actionable.
+Use only the supplied dataset.
 """
 
 
         with st.spinner(
-            "Gemini is preparing the executive audit report..."
+            "Gemini is preparing the report..."
         ):
 
             report = (
@@ -4612,161 +3879,34 @@ Keep the report concise, professional and actionable.
         ] = report
 
 
-    # --------------------------------------------------------
-    # GENERATED REPORT
-    # --------------------------------------------------------
-
     if st.session_state[
         "executive_report"
     ]:
 
-        st.divider()
-
-
-        report_tab, data_tab = (
-            st.tabs(
-                [
-                    "Executive Report",
-                    "Supporting Data",
-                ]
-            )
+        st.subheader(
+            "Executive Audit Report"
         )
 
 
-        with report_tab:
+        with st.container(
+            border=True
+        ):
 
-            st.subheader(
-                "Executive Audit Report"
-            )
-
-
-            with st.container(
-                border=True
-            ):
-
-                st.markdown(
-                    st.session_state[
-                        "executive_report"
-                    ]
-                )
-
-
-            download_col, notice_col = (
-                st.columns(
-                    [
-                        1,
-                        2,
-                    ]
-                )
-            )
-
-
-            with download_col:
-
-                st.download_button(
-                    "Download Executive Report",
-                    data=st.session_state[
-                        "executive_report"
-                    ],
-                    file_name=(
-                        "ai_audit_executive_report.txt"
-                    ),
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-
-
-            with notice_col:
-
-                st.info(
-                    "AI-generated executive content should "
-                    "be reviewed by a qualified auditor "
-                    "before broader use."
-                )
-
-
-        with data_tab:
-
-            st.subheader(
-                "Supporting Audit Data"
-            )
-
-            st.caption(
-                "Structured findings provided as context "
-                "for the executive report."
-            )
-
-
-            supporting_df = (
-                df[
-                    [
-                        "claim_id",
-                        "provider",
-                        "procedure_code",
-                        "billed_amount",
-                        "allowed_amount",
-                        "variance",
-                        "risk_score",
-                        "final_risk",
-                    ]
+            st.markdown(
+                st.session_state[
+                    "executive_report"
                 ]
-                .sort_values(
-                    by=[
-                        "risk_score",
-                        "variance",
-                    ],
-                    ascending=[
-                        False,
-                        False,
-                    ],
-                )
             )
 
 
-            st.dataframe(
-                supporting_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-
-                    "claim_id":
-                        "Claim ID",
-
-                    "provider":
-                        "Provider",
-
-                    "procedure_code":
-                        "Procedure",
-
-                    "billed_amount":
-                        st.column_config.NumberColumn(
-                            "Billed",
-                            format="$%.0f",
-                        ),
-
-                    "allowed_amount":
-                        st.column_config.NumberColumn(
-                            "Allowed",
-                            format="$%.0f",
-                        ),
-
-                    "variance":
-                        st.column_config.NumberColumn(
-                            "Variance",
-                            format="$%.0f",
-                        ),
-
-                    "risk_score":
-                        st.column_config.ProgressColumn(
-                            "Risk Score",
-                            min_value=0,
-                            max_value=4,
-                        ),
-
-                    "final_risk":
-                        "Risk",
-                },
-            )
+        st.download_button(
+            "Download Executive Report",
+            data=st.session_state[
+                "executive_report"
+            ],
+            file_name="ai_audit_executive_report.txt",
+            mime="text/plain",
+        )
 
 
 # ============================================================
@@ -4811,7 +3951,8 @@ st.divider()
 
 st.caption(
     "AI Audit Copilot • Prototype • "
-    "Rule-based and statistical risk indicators are decision-support signals only. "
+    "Rules and statistical anomaly indicators are decision-support signals only. "
+    "RAG retrieves supporting policy context. "
     "AI-generated content requires human review. "
     "Use synthetic or properly de-identified data."
 )
